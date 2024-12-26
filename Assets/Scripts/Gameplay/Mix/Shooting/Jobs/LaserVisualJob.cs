@@ -27,7 +27,7 @@ namespace Unity.MegacityMetro.Gameplay
                 return;
 
             var ltw = LocalToWorldLookup[entity];
-            var startPoint = laser.CalculateLaserStartPoint(ltw.Position, ltw.Rotation);
+            var startPoint = 0;
             var endPoint = laser.CalculateLaserEndPoint(ltw.Position, ltw.Rotation, ref LocalToWorldLookup);
 
             if (laser.DetectedTarget == Entity.Null)
