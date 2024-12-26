@@ -44,88 +44,80 @@ namespace Unity.MegacityMetro.Gameplay
             in VehicleHealth health,
             ref VehicleMovementState vehicleMovementState)
         {
-            if (health.IsDead == 1)
-            {
-                // Gravity
-                velocity.Linear += -math.up() * 20f * DeltaTime;
-            }
-            else
-            {
-                // Pitch & Yaw
-                float2 smoothedLookVelocity = math.lerp(vehicleMovementState.LastLookVelocity, controlInput.LookVelocity, MathUtilities.GetSharpnessInterpolant(vehicleSettings.LookVelocitySharpness, DeltaTime));
+            // Pitch & Yaw
+            float2 smoothedLookVelocity = math.lerp(vehicleMovementState.LastLookVelocity, controlInput.LookVelocity, MathUtilities.GetSharpnessInterpolant(vehicleSettings.LookVelocitySharpness, DeltaTime));
                 
-                float rotationSpeed = BaseSteeringSpeedMultiplier * vehicleSettings.SteeringSpeed;
-                float maxPitchRadians = math.radians(vehicleSettings.MaxPitchAngle);
-                float yawDelta = (smoothedLookVelocity.y * rotationSpeed * DeltaTime);
-                vehicleMovementState.PitchRadians = math.clamp(vehicleMovementState.PitchRadians + (smoothedLookVelocity.x * rotationSpeed * DeltaTime), -maxPitchRadians, maxPitchRadians);
-                vehicleMovementState.YawRadians = vehicleMovementState.YawRadians + yawDelta;
-                quaternion newRotation = vehicleMovementState.CalculateTargetRotation();
-                float3 forward = math.mul(newRotation, math.forward());
+            float rotationSpeed = BaseSteeringSpeedMultiplier * vehicleSettings.SteeringSpeed;
+            float maxPitchRadians = math.radians(vehicleSettings.MaxPitchAngle);
+            float yawDelta = (smoothedLookVelocity.y * rotationSpeed * DeltaTime);
+            vehicleMovementState.PitchRadians = math.clamp(vehicleMovementState.PitchRadians + (smoothedLookVelocity.x * rotationSpeed * DeltaTime), -maxPitchRadians, maxPitchRadians);
+            vehicleMovementState.YawRadians = vehicleMovementState.YawRadians + yawDelta;
+            quaternion newRotation = vehicleMovementState.CalculateTargetRotation();
+            float3 forward = math.mul(newRotation, math.forward());
 
-                vehicleMovementState.LastLookVelocity = smoothedLookVelocity;
+            vehicleMovementState.LastLookVelocity = smoothedLookVelocity;
                 
-                // Acceleration
+            // Acceleration
+            {
+                float chosenAcceleration = vehicleSettings.Acceleration;
+                if (controlInput.Acceleration < 0f)
                 {
-                    float chosenAcceleration = vehicleSettings.Acceleration;
-                    if (controlInput.Acceleration < 0f)
-                    {
-                        chosenAcceleration = vehicleSettings.Deceleration;
-                    }
-                    velocity.Linear += forward * controlInput.Acceleration * chosenAcceleration * DeltaTime;
+                    chosenAcceleration = vehicleSettings.Deceleration;
+                }
+                velocity.Linear += forward * controlInput.Acceleration * chosenAcceleration * DeltaTime;
 
-                    float speed = math.length(velocity.Linear);
-                    if (speed > vehicleSettings.MaxSpeed)
+                float speed = math.length(velocity.Linear);
+                if (speed > vehicleSettings.MaxSpeed)
+                {
+                    velocity.Linear = math.normalizesafe(velocity.Linear) * vehicleSettings.MaxSpeed;
+                }
+            }
+
+            // Roll
+            {
+                // Accumulate roll when turning 
+                float yawSpeed = 0f;
+                if (DeltaTime != 0f)
+                {
+                    yawSpeed = yawDelta / DeltaTime;
+                    if (yawSpeed != 0f)
                     {
-                        velocity.Linear = math.normalizesafe(velocity.Linear) * vehicleSettings.MaxSpeed;
+                        quaternion rotationWithoutRoll = vehicleMovementState.CalculateTargetRotationWithoutRoll();
+                        float3 velChangeFromTurningDirection = math.mul(rotationWithoutRoll, math.right() * yawSpeed);
+                        float3 newUp = math.mul(newRotation, math.up());
+                        float dotUpWithVelChangeDirection = math.dot(math.normalizesafe(velChangeFromTurningDirection), newUp);
+
+                        float turnAmount = -(1f - dotUpWithVelChangeDirection) * 0.5f * math.abs(yawSpeed);
+                        float turnDirection = yawSpeed < 0f ? 1f : -1f;
+                        vehicleMovementState.RollAccumulationFromTurn = math.clamp(vehicleMovementState.RollAccumulationFromTurn + (turnAmount * turnDirection * vehicleSettings.RollAccumulationSpeed), -1f, 1f);
                     }
                 }
 
-                // Roll
+                // Base roll (from input)
+                vehicleMovementState.BaseRoll += (-controlInput.Roll * vehicleSettings.ManualRollSpeed * DeltaTime);
+                if (vehicleMovementState.BaseRoll > math.PI)
                 {
-                    // Accumulate roll when turning 
-                    float yawSpeed = 0f;
-                    if (DeltaTime != 0f)
-                    {
-                        yawSpeed = yawDelta / DeltaTime;
-                        if (yawSpeed != 0f)
-                        {
-                            quaternion rotationWithoutRoll = vehicleMovementState.CalculateTargetRotationWithoutRoll();
-                            float3 velChangeFromTurningDirection = math.mul(rotationWithoutRoll, math.right() * yawSpeed);
-                            float3 newUp = math.mul(newRotation, math.up());
-                            float dotUpWithVelChangeDirection = math.dot(math.normalizesafe(velChangeFromTurningDirection), newUp);
+                    vehicleMovementState.BaseRoll -= math.PI * 2f;
+                }
+                else if (vehicleMovementState.BaseRoll < -math.PI)
+                {
+                    vehicleMovementState.BaseRoll += math.PI * 2f;
+                }
 
-                            float turnAmount = -(1f - dotUpWithVelChangeDirection) * 0.5f * math.abs(yawSpeed);
-                            float turnDirection = yawSpeed < 0f ? 1f : -1f;
-                            vehicleMovementState.RollAccumulationFromTurn = math.clamp(vehicleMovementState.RollAccumulationFromTurn + (turnAmount * turnDirection * vehicleSettings.RollAccumulationSpeed), -1f, 1f);
-                        }
-                    }
+                // Final roll
+                vehicleMovementState.RollRadians = vehicleMovementState.BaseRoll + math.lerp(0f, math.PI * 0.5f, -vehicleMovementState.RollAccumulationFromTurn);
 
-                    // Base roll (from input)
-                    vehicleMovementState.BaseRoll += (-controlInput.Roll * vehicleSettings.ManualRollSpeed * DeltaTime);
-                    if (vehicleMovementState.BaseRoll > math.PI)
-                    {
-                        vehicleMovementState.BaseRoll -= math.PI * 2f;
-                    }
-                    else if (vehicleMovementState.BaseRoll < -math.PI)
-                    {
-                        vehicleMovementState.BaseRoll += math.PI * 2f;
-                    }
+                // Restitution of base roll
+                if (math.abs(controlInput.Roll) < 0.001f)
+                {
+                    vehicleMovementState.BaseRoll = math.lerp(vehicleMovementState.BaseRoll, 0f, MathUtilities.GetSharpnessInterpolant(vehicleSettings.RollRestitutionSpeed, DeltaTime));
+                }
 
-                    // Final roll
-                    vehicleMovementState.RollRadians = vehicleMovementState.BaseRoll + math.lerp(0f, math.PI * 0.5f, -vehicleMovementState.RollAccumulationFromTurn);
-
-                    // Restitution of base roll
-                    if (math.abs(controlInput.Roll) < 0.001f)
-                    {
-                        vehicleMovementState.BaseRoll = math.lerp(vehicleMovementState.BaseRoll, 0f, MathUtilities.GetSharpnessInterpolant(vehicleSettings.RollRestitutionSpeed, DeltaTime));
-                    }
-
-                    // Restitution of turning roll
-                    if (vehicleSettings.YawSpeedForMaxRoll != 0f)
-                    {
-                        float finalRollRestitutionSpeed = math.lerp(vehicleSettings.RollRestitutionSpeed, 0f, math.saturate(math.abs(yawSpeed) / vehicleSettings.YawSpeedForMaxRoll));
-                        vehicleMovementState.RollAccumulationFromTurn = math.lerp(vehicleMovementState.RollAccumulationFromTurn, 0f, MathUtilities.GetSharpnessInterpolant(finalRollRestitutionSpeed, DeltaTime));
-                    }
+                // Restitution of turning roll
+                if (vehicleSettings.YawSpeedForMaxRoll != 0f)
+                {
+                    float finalRollRestitutionSpeed = math.lerp(vehicleSettings.RollRestitutionSpeed, 0f, math.saturate(math.abs(yawSpeed) / vehicleSettings.YawSpeedForMaxRoll));
+                    vehicleMovementState.RollAccumulationFromTurn = math.lerp(vehicleMovementState.RollAccumulationFromTurn, 0f, MathUtilities.GetSharpnessInterpolant(finalRollRestitutionSpeed, DeltaTime));
                 }
             }
         }
