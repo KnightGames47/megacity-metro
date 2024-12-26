@@ -122,9 +122,6 @@ namespace Unity.MegacityMetro.UI
                     var opacity = Mathf.PingPong(Time.time * m_DamageIndicatorSpeed, m_DamageIndicatorMaxOpacity);
                     m_DamageIndicator.style.opacity = opacity;
                 }
-
-                m_HealthBar.value = life;
-                m_HealthBarLabel.text = $"{(int)life}";
             }
 
             m_AttackerPointerContainer.style.display = displayStyle;
