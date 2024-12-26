@@ -48,7 +48,6 @@ namespace Unity.MegacityMetro.Gameplay
                 targetHealth.LookAtEnemyDegrees = 0;
                 if (targetHealth.Value > 0)
                 {
-                    targetHealth.Value -= damage;
                     ownerScore.Value += damage;
 
                     //victim gets the angle to look at the attacker
